@@ -7,7 +7,7 @@ use std::{
 
 use partial_sort::PartialSort;
 
-use llama_cpp_sys_3::{llama_token, llama_token_data, llama_token_data_array};
+use llama_cpp_sys_4::{llama_token, llama_token_data, llama_token_data_array};
 
 use crate::{
     model::Vocab,
@@ -134,7 +134,7 @@ impl TokenDataArray<'_> {
     }
 
     /// Get a pointer to the inner [`llama_token_data_array`]. Provided for
-    /// compatability with [`llama_cpp_sys_3`] and friends.
+    /// compatability with [`llama_cpp_sys_4`] and friends.
     ///
     /// # Panics
     /// * If the arr.size has been modified to be out of bounds.
@@ -151,7 +151,7 @@ impl TokenDataArray<'_> {
     }
 
     /// Get a mutable pointer to the inner [`llama_token_data_array`]. Provided
-    /// for compatability with [`llama_cpp_sys_3`] and friends.
+    /// for compatability with [`llama_cpp_sys_4`] and friends.
     ///
     /// # Safety
     /// * The `arr.size` is guaranteed to be valid as long as the Candidates
@@ -190,6 +190,8 @@ pub struct Candidates {
     pub(crate) softmax_applied_to: Option<NonZeroUsize>,
     /// The actual candidate tokens.
     pub(crate) data: Vec<llama_token_data>,
+    /// this is the index in the data array (i.e. not the token ids)
+    pub(crate) selected: i64,
 }
 
 static_assertions::assert_impl_all!(Candidates: Send, Sync);
@@ -249,6 +251,7 @@ impl Candidates {
             data,
             sort_state,
             softmax_applied_to: None,
+            selected: -1,
         }
     }
 
@@ -299,6 +302,7 @@ impl Candidates {
             data,
             sort_state,
             softmax_applied_to: None,
+            selected: -1,
         }
     }
 
@@ -311,11 +315,11 @@ impl Candidates {
     where
         T: IntoIterator<Item = f32>,
     {
-        Self::from_iter(
-            (0..)
-                .zip(it.into_iter())
-                .map(|(id, logit)| llama_token_data { id, logit, p: 0.0 }),
-        )
+        Self::from_iter((0..).zip(it).map(|(id, logit)| llama_token_data {
+            id,
+            logit,
+            p: 0.0,
+        }))
     }
 
     /// Create a new Candidates container from a [`Vec`] without checking if the
@@ -335,6 +339,7 @@ impl Candidates {
             data,
             sort_state: Sorted::Unknown,
             softmax_applied_to: None,
+            selected: -1,
         }
     }
 
@@ -351,6 +356,7 @@ impl Candidates {
             data,
             sort_state,
             softmax_applied_to,
+            selected: -1,
         }
     }
 
@@ -367,12 +373,18 @@ impl Candidates {
     ///   **or there will be a memory leak**. [`Vec::from_raw_parts`] can also
     ///   be used to take ownership of the data.
     pub fn into_llama_token_data_array(mut self) -> llama_token_data_array {
+        let selected = self.selected;
         let size = self.len().get();
         let data = self.data.as_mut_ptr();
         let sorted =
             self.is_sorted().by_logit().is_some_and(|n| n.get() == size);
         std::mem::forget(self);
-        llama_token_data_array { size, data, sorted }
+        llama_token_data_array {
+            size,
+            data,
+            sorted,
+            selected,
+        }
     }
 
     /// Create a Candidates container from `llama_token_data_array`. This will
@@ -406,6 +418,7 @@ impl Candidates {
     ) -> Self {
         assert!(!arr.data.is_null());
         let data = Vec::from_raw_parts(arr.data, arr.size, arr.size);
+        let selected = arr.selected;
 
         if arr.sorted {
             debug_assert!(data.windows(2).all(|w| w[0].logit >= w[1].logit));
@@ -421,6 +434,7 @@ impl Candidates {
                 Sorted::Unknown
             },
             softmax_applied_to,
+            selected,
         }
     }
 
@@ -577,7 +591,7 @@ impl Candidates {
     ///
     /// If a method is called that modifies the candidates, the internal sort
     /// state and softmax state will be invalidated automatically.
-    pub fn as_token_data_array<'a>(&'a mut self) -> TokenDataArray<'a> {
+    pub fn as_token_data_array(&mut self) -> TokenDataArray<'_> {
         TokenDataArray {
             arr: llama_token_data_array {
                 data: self.data.as_mut_ptr(),
@@ -586,6 +600,7 @@ impl Candidates {
                     .by_logit()
                     .is_some_and(|n| n == self.len()),
                 size: self.len().get(),
+                selected: self.selected,
             },
             candidates: self,
         }
@@ -648,7 +663,7 @@ impl Candidates {
         });
         let cum_sum: f32 = cum_sum as f32;
         for token in &mut new.data {
-            token.p /= cum_sum as f32;
+            token.p /= cum_sum;
         }
 
         // We're not changing the logits so we don't need to sort again.
@@ -739,7 +754,7 @@ impl Candidates {
         // the original implementation.
 
         // If the candidates are not sorted, use the unsorted implementation
-        if !self.is_sorted().by_logit().is_some_and(|k| k == self.len()) {
+        if self.is_sorted().by_logit().is_none_or(|k| k != self.len()) {
             let mut max_logit: f32 = f32::MAX;
             for candidate in self.data.iter() {
                 max_logit = max_logit.max(candidate.logit);
@@ -946,7 +961,7 @@ impl Candidates {
         let mu = opt_mu.unwrap_or(2.0 * tau);
 
         // Estimate s_hat using the most probable m tokens
-        let s_hat;
+
         let mut t_i;
         let mut b_i;
         let mut sum_ti_bi = 0.0;
@@ -957,7 +972,7 @@ impl Candidates {
             sum_ti_bi += t_i * b_i;
             sum_ti_sq += t_i * b_i;
         }
-        s_hat = sum_ti_bi / sum_ti_sq;
+        let s_hat = sum_ti_bi / sum_ti_sq;
 
         // Compute k from the estimated s_hat and target suprise value
         let epsilon_hat = s_hat - 1.0;
@@ -1229,7 +1244,7 @@ impl Candidates {
     /// * This method may sort the candidates if they are not already sorted.
     /// * This method may change the logits of the candidates.
     ///
-    /// [`llama_sample_repetition_penalties`]: llama_cpp_sys_3::llama_sample_repetition_penalties
+    /// [`llama_sample_repetition_penalties`]: llama_cpp_sys_4::llama_sample_repetition_penalties
     pub fn penalize_repetition(
         self,
         tokens: &[llama_token],
@@ -1303,7 +1318,7 @@ mod tests {
         // Test with a vector sorted by id
         let v = (0..10)
             .map(|i| llama_token_data {
-                id: i as i32,
+                id: i,
                 logit: 0.0,
                 p: 0.0,
             })
@@ -1317,7 +1332,7 @@ mod tests {
         // Test with a vector sorted by logit
         let v = (0..10)
             .map(|i| llama_token_data {
-                id: 9 - i as i32,
+                id: 9 - i,
                 logit: -(i as f32),
                 p: 0.0,
             })
@@ -1331,7 +1346,7 @@ mod tests {
         // Test with a vector that is not sorted
         let v = (0..10)
             .map(|i| llama_token_data {
-                id: 9 - i as i32,
+                id: 9 - i,
                 logit: i as f32,
                 p: 0.0,
             })

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use llama_cpp_sys_3::{
+use llama_cpp_sys_4::{
     llama_context_default_params, llama_context_params,
     llama_model_default_params, llama_model_params,
 };

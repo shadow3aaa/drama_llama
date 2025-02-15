@@ -1,4 +1,4 @@
-use llama_cpp_sys_3::llama_token;
+use llama_cpp_sys_4::llama_token;
 
 use crate::{Message, Model, Prompt, Role};
 
@@ -58,22 +58,21 @@ pub enum Format {
 
 impl Format {
     pub fn from_model(model: &Model) -> Option<Self> {
-        let found =
-            match model.get_meta("general.name").as_ref().map(|s| s.as_str()) {
-                Some("LLaMA") => Some(Self::LLaMA),
-                Some("LLaMA v2") => Some(Self::LLaMA2),
-                Some("LLaMA v2 Chat") => Some(Self::LLaMA2Chat),
-                // The current ggml conversion of llama3 has ".." as the model name,
-                // but that is likely an error. I am testing with this model:
-                // https://huggingface.co/NousResearch/Meta-Llama-3-70B-GGUF As soon
-                // as a better conversion is available, I will update this. Other
-                // heuristics may be needed to determine the model type.
-                Some("LLaMA v3") => Some(Self::LLaMA3),
-                Some("LLaMA v3 Chat") => Some(Self::LLaMA3Chat),
-                // TODO: download Vicuna and check the model name, also check the
-                // chat models above.
-                _ => None,
-            };
+        let found = match model.get_meta("general.name").as_deref() {
+            Some("LLaMA") => Some(Self::LLaMA),
+            Some("LLaMA v2") => Some(Self::LLaMA2),
+            Some("LLaMA v2 Chat") => Some(Self::LLaMA2Chat),
+            // The current ggml conversion of llama3 has ".." as the model name,
+            // but that is likely an error. I am testing with this model:
+            // https://huggingface.co/NousResearch/Meta-Llama-3-70B-GGUF As soon
+            // as a better conversion is available, I will update this. Other
+            // heuristics may be needed to determine the model type.
+            Some("LLaMA v3") => Some(Self::LLaMA3),
+            Some("LLaMA v3 Chat") => Some(Self::LLaMA3Chat),
+            // TODO: download Vicuna and check the model name, also check the
+            // chat models above.
+            _ => None,
+        };
 
         if found.is_some() {
             return found;
@@ -146,9 +145,8 @@ impl Format {
                     );
                     write!(
                         f,
-                        "{}{}{}\n\n{}{}",
+                        "{}system{}\n\n{}{}",
                         llama3::B_HEADER,
-                        "system",
                         llama3::E_HEADER,
                         &setting,
                         llama3::EOT
@@ -243,7 +241,7 @@ impl Format {
                             // which better constrains the agent's behavior and
                             // this may be per-agent, which is why it's a good
                             // thing it's configurable in the `Prompt`.
-                            &prompt.system.as_deref().unwrap_or("narrator"),
+                            prompt.system.as_deref().unwrap_or("narrator"),
                         )?,
                     }
                     f.write_str(llama3::E_HEADER)?;
@@ -339,7 +337,7 @@ impl Format {
         F: std::fmt::Write,
     {
         if let Some(model) = model {
-            if model.add_bos().unwrap_or(Model::DEFAULT_ADD_BOS) {
+            if model.add_bos() {
                 f.write_str(&model.token_to_piece(model.bos()))?;
             }
         }

@@ -9,8 +9,6 @@ repository = "https://github.com/mdegans/drama_llama"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-llama-cpp-sys-3 = { git = "https://github.com/shadow3aaa/llama-cpp-sys" }
-
 derive_more = "0.99.17"
 num = "0.4"
 partial_sort = { version = "0.2.0" }
@@ -21,7 +19,6 @@ thiserror = "1.0"
 tinyvec = "1.6"
 xorshift = "0.1"
 rayon = "1.10.0"
-
 markdown = { version = "=1.0.0-alpha.16", optional = true }
 rocket = { version = "0.5", optional = true, features = ["json"] }
 clap = { version = "4.5", optional = true, features = ["derive"] }
@@ -34,7 +31,7 @@ eframe = { version = "0.27", optional = true }
 egui_file = { version = "0.17.0", optional = true }
 egui_extras = { version = "0.27", optional = true, features = ["all_loaders"] }
 image = { version = "0.25", optional = true, features = ["png"] }
-
+llama-cpp-sys-4 = { git = "https://github.com/shadow3aaa/llama-cpp-rs" }
 
 [features]
 webchat = ["dep:rocket", "toml", "dep:dirs", "dep:markdown", "serde"]
@@ -43,8 +40,7 @@ cli = ["dep:clap"]
 # we use rocket's serde support
 serde = ["dep:rocket", "tinyvec/serde"]
 stats = ["dep:stringmetrics"]
-cuda = ["llama-cpp-sys-3/cuda"]
-cuda_f16 = ["llama-cpp-sys-3/cuda_f16"]
+cuda = ["llama-cpp-sys-4/cuda"]
 egui = [
     "dep:egui",
     "dep:eframe",

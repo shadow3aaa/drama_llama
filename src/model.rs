@@ -1,24 +1,24 @@
 use derive_more::From;
-use llama_cpp_sys_3::{
-    ggml_tensor, llama_add_bos_token, llama_add_eos_token,
-    llama_chat_apply_template, llama_chat_message, llama_free_model,
-    llama_get_model_tensor, llama_load_model_from_file, llama_model,
-    llama_model_apply_lora_from_file, llama_model_default_params,
-    llama_model_desc, llama_model_meta_count, llama_model_meta_key_by_index,
-    llama_model_meta_val_str, llama_model_meta_val_str_by_index,
-    llama_model_n_params, llama_model_params, llama_model_quantize,
+use llama_cpp_sys_4::{
+    llama_add_bos_token, llama_add_eos_token, llama_chat_apply_template,
+    llama_chat_message, llama_free_model, llama_load_model_from_file,
+    llama_model, llama_model_default_params, llama_model_desc,
+    llama_model_get_vocab, llama_model_meta_count,
+    llama_model_meta_key_by_index, llama_model_meta_val_str,
+    llama_model_meta_val_str_by_index, llama_model_n_params,
+    llama_model_params, llama_model_quantize,
     llama_model_quantize_default_params, llama_model_quantize_params,
-    llama_model_size, llama_n_ctx_train, llama_n_embd, llama_n_vocab,
-    llama_rope_freq_scale_train, llama_rope_type, llama_token, llama_token_bos,
-    llama_token_eos, llama_token_eot, llama_token_get_score,
-    llama_token_get_text, llama_token_middle, llama_token_nl,
-    llama_token_prefix, llama_token_suffix, llama_token_to_piece,
-    llama_tokenize, llama_vocab_type,
+    llama_model_rope_freq_scale_train, llama_model_rope_type, llama_model_size,
+    llama_n_ctx_train, llama_n_embd, llama_n_vocab, llama_token,
+    llama_token_bos, llama_token_eos, llama_token_eot, llama_token_fim_mid,
+    llama_token_fim_pre, llama_token_fim_suf, llama_token_get_score,
+    llama_token_get_text, llama_token_nl, llama_token_to_piece, llama_tokenize,
+    llama_vocab_type,
 };
 use std::{
     collections::BTreeMap,
     ffi::{c_char, CStr, CString},
-    num::{NonZeroI32, NonZeroU32},
+    num::NonZeroU32,
     path::PathBuf,
 };
 
@@ -53,10 +53,11 @@ pub(crate) fn token_to_piece_ref(
     // is no risk of a buffer overflow.
     let n_tokens = unsafe {
         llama_token_to_piece(
-            model.as_ptr(),
+            llama_model_get_vocab(model.as_ptr()),
             token,
             buf.as_mut_ptr() as *mut i8,
             buf.len().try_into().unwrap(),
+            0,
             true,
         )
     };
@@ -66,10 +67,11 @@ pub(crate) fn token_to_piece_ref(
 
         let check = unsafe {
             llama_token_to_piece(
-                model.as_ptr(),
+                llama_model_get_vocab(model.as_ptr()),
                 token,
                 buf.as_mut_ptr() as *mut i8,
                 buf.len().try_into().unwrap(),
+                0,
                 true,
             )
         };
@@ -195,13 +197,13 @@ impl Model {
 
     /// Return the inner model.
     pub fn as_ptr(&self) -> *const llama_model {
-        debug_assert_eq!(self.inner.is_null(), false);
+        debug_assert!(!self.inner.is_null());
         self.inner as *const llama_model
     }
 
     /// Return the inner model mutably.
     pub fn as_ptr_mut(&mut self) -> *mut llama_model {
-        debug_assert_eq!(self.inner.is_null(), false);
+        debug_assert!(!self.inner.is_null());
         self.inner
     }
 
@@ -210,37 +212,37 @@ impl Model {
 
     /// Return the Beginning of Sequence (BOS) token.
     pub fn bos(&self) -> llama_token {
-        unsafe { llama_token_bos(self.inner) }
+        unsafe { llama_token_bos(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return the End of Sequence (EOS) token.
     pub fn eos(&self) -> llama_token {
-        unsafe { llama_token_eos(self.inner) }
+        unsafe { llama_token_eos(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return the next-line token.
     pub fn next_line(&self) -> llama_token {
-        unsafe { llama_token_nl(self.inner) }
+        unsafe { llama_token_nl(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return the infill prefix token.
     pub fn infill_prefix(&self) -> llama_token {
-        unsafe { llama_token_prefix(self.inner) }
+        unsafe { llama_token_fim_pre(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return the infill middle token.
     pub fn infill_middle(&self) -> llama_token {
-        unsafe { llama_token_middle(self.inner) }
+        unsafe { llama_token_fim_mid(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return the end of infill middle token.
     pub fn eot(&self) -> llama_token {
-        unsafe { llama_token_eot(self.inner) }
+        unsafe { llama_token_eot(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return the infill suffix token.
     pub fn infill_suffix(&self) -> llama_token {
-        unsafe { llama_token_suffix(self.inner) }
+        unsafe { llama_token_fim_suf(llama_model_get_vocab(self.inner)) }
     }
 
     /// Calculate the longest token length. Useful for optimizing searches.
@@ -258,37 +260,25 @@ impl Model {
     /// Return whether BOS token is enabled.
     ///
     /// Returns None if unknown.
-    pub fn add_bos(&self) -> Option<bool> {
-        let code = unsafe { llama_add_bos_token(self.inner) };
-        match code {
-            -1 => None,
-            0 => Some(false),
-            1 => Some(true),
-            _ => unreachable!(),
-        }
+    pub fn add_bos(&self) -> bool {
+        unsafe { llama_add_bos_token(llama_model_get_vocab(self.inner)) }
     }
 
     /// Return whether the EOS token is enabled.
     ///
     /// Returns None if unknown.
-    pub fn add_eos(&self) -> Option<bool> {
-        let code = unsafe { llama_add_eos_token(self.inner) };
-        match code {
-            -1 => None,
-            0 => Some(false),
-            1 => Some(true),
-            _ => unreachable!(),
-        }
+    pub fn add_eos(&self) -> bool {
+        unsafe { llama_add_eos_token(llama_model_get_vocab(self.inner)) }
     }
 
     /// Vocab type.
     pub fn vocab_type(&self) -> llama_vocab_type {
-        unsafe { llama_vocab_type(self.inner) }
+        unsafe { llama_vocab_type(llama_model_get_vocab(self.inner)) }
     }
 
     /// Vocab size.
     pub fn n_vocab(&self) -> i32 {
-        unsafe { llama_n_vocab(self.inner) }
+        unsafe { llama_n_vocab(llama_model_get_vocab(self.inner)) }
     }
 
     /// Context size the model was trained with.
@@ -303,12 +293,12 @@ impl Model {
 
     /// Rotary Position Encoding (RoPE) type.
     pub fn rope_type(&self) -> i32 {
-        unsafe { llama_rope_type(self.inner) }
+        unsafe { llama_model_rope_type(self.inner) }
     }
 
     /// RoPE frequency scaling factor.
     pub fn rope_freq_scale(&self) -> f32 {
-        unsafe { llama_rope_freq_scale_train(self.inner) }
+        unsafe { llama_model_rope_freq_scale_train(self.inner) }
     }
 
     /// Get the number of metadata entries.
@@ -359,8 +349,7 @@ impl Model {
 
             // This could fail if the model has junk in the description. It's
             // not a programmer error, so we'll just return an error string.
-            return String::from_utf8(buf)
-                .unwrap_or("[Invalid UTF-8]".to_string());
+            String::from_utf8(buf).unwrap_or("[Invalid UTF-8]".to_string())
         }
     }
 
@@ -486,66 +475,6 @@ impl Model {
 
         String::from_utf8(buf).ok()
     }
-    /// Get a tensor by name.
-    pub fn get_tensor<'a>(&'a self, name: &str) -> Option<&'a ggml_tensor> {
-        let name = CString::new(name).unwrap();
-        // Safety: The name is a null-terminated string.
-        let tensor = unsafe {
-            llama_get_model_tensor(
-                self.inner,
-                name.as_bytes_with_nul().as_ptr() as *const c_char,
-            )
-        };
-        if tensor.is_null() {
-            None
-        } else {
-            // Safety: The pointer is non-null and properly aligned. The
-            // lifetime is tied to the model and documented in the function
-            // signature.
-            Some(unsafe { tensor.as_ref().unwrap() })
-        }
-    }
-
-    /// Apply a LoRA adapter to a loaded model.
-    ///
-    /// In the case of an error, the function returns a non-zero error code.
-    ///
-    /// Parameters:
-    /// * `lora` - Path to the LoRA adapter.
-    /// * `scale` - Scaling factor for the adapter.
-    /// * `hq_model` - Path to the high-quality model (optional).
-    /// * `n_threads` - Number of threads to use.
-    pub fn apply_lora(
-        &mut self,
-        lora: PathBuf,
-        scale: f32,
-        hq_model: Option<PathBuf>,
-        n_threads: i32,
-    ) -> Result<(), NonZeroI32> {
-        let lora = path_to_cstring(lora);
-        let hq_model = match hq_model {
-            Some(hq) => Some(path_to_cstring(hq)),
-            None => None,
-        };
-
-        // Safety: The paths are null-terminated strings.
-        let code = unsafe {
-            llama_model_apply_lora_from_file(
-                self.inner,
-                lora.as_bytes_with_nul().as_ptr() as *const c_char,
-                scale,
-                hq_model
-                    .map(|s| s.as_bytes_with_nul().as_ptr() as *const c_char)
-                    .unwrap_or(std::ptr::null()),
-                n_threads,
-            )
-        };
-        if code == 0 {
-            Ok(())
-        } else {
-            Err(code.try_into().unwrap())
-        }
-    }
 
     /// Tokenize a string into a Vec of tokens.
     pub fn tokenize(&self, input: &str, special: bool) -> Vec<llama_token> {
@@ -555,12 +484,8 @@ impl Model {
         // Guess a reasonable number of tokens to allocate. This is not
         // guaranteed to be enough, but it will probably be enough in most
         // cases.
-        let mut n_tokens: i32 = (input.as_bytes().len()
-            + if self.add_bos().unwrap_or(Model::DEFAULT_ADD_BOS) {
-                1
-            } else {
-                0
-            })
+        let mut n_tokens: i32 = (input.len()
+            + if self.add_bos() { 1 } else { 0 })
         .try_into()
         .unwrap();
         n_tokens /= 3;
@@ -574,12 +499,12 @@ impl Model {
         // function will return the number of tokens needed.
         n_tokens = unsafe {
             llama_tokenize(
-                self.inner,
+                llama_model_get_vocab(self.inner),
                 input.as_bytes().as_ptr() as *const i8,
                 input.len().try_into().unwrap(),
                 result.as_mut_ptr(),
                 result.len().try_into().unwrap(),
-                self.add_bos().unwrap_or(Self::DEFAULT_ADD_BOS),
+                self.add_bos(),
                 special,
             )
         };
@@ -592,12 +517,12 @@ impl Model {
             // Safety: Same as above, but we double-check the length below.
             let check = unsafe {
                 llama_tokenize(
-                    self.inner,
+                    llama_model_get_vocab(self.inner),
                     input.as_bytes().as_ptr() as *const i8,
                     input.len().try_into().unwrap(),
                     result.as_mut_ptr(),
                     result.len().try_into().unwrap(),
-                    self.add_bos().unwrap_or(Self::DEFAULT_ADD_BOS),
+                    self.add_bos(),
                     special,
                 )
             };
@@ -606,7 +531,7 @@ impl Model {
             result.resize(n_tokens as usize, 0);
         }
 
-        if self.add_eos().unwrap_or(Self::DEFAULT_ADD_EOS) {
+        if self.add_eos() {
             result.push(self.eos());
         }
 
@@ -618,7 +543,7 @@ impl Model {
     /// # Panics
     /// * If the token's piece is not valid UTF-8.
     pub fn token_to_piece(&self, token: llama_token) -> String {
-        token_to_piece(token, &self)
+        token_to_piece(token, self)
     }
 
     /// Convert tokens to text.
@@ -710,7 +635,6 @@ impl Model {
         // the buffer.
         let ret = unsafe {
             llama_chat_apply_template(
-                self.inner,
                 template_ptr,
                 messages.as_ptr(),
                 messages.len(),
@@ -734,7 +658,6 @@ impl Model {
 
             let check: usize = unsafe {
                 llama_chat_apply_template(
-                    self.inner,
                     template_ptr,
                     messages.as_ptr(),
                     messages.len(),
@@ -771,9 +694,11 @@ impl Model {
     /// * If the token text is invalid UTF-8
     // It's unclear how this differs from `token_to_piece` other than returning
     // a c_str() ptr to the underlying c++ std::string
-    pub fn token_to_text<'a>(&'a self, token: llama_token) -> &'a str {
-        let ptr = unsafe { llama_token_get_text(self.inner, token) };
-        return unsafe { CStr::from_ptr(ptr) }.to_str().unwrap();
+    pub fn token_to_text(&self, token: llama_token) -> &str {
+        let ptr = unsafe {
+            llama_token_get_text(llama_model_get_vocab(self.inner), token)
+        };
+        unsafe { CStr::from_ptr(ptr) }.to_str().unwrap()
     }
 
     /// Convert tokens to text.
@@ -796,7 +721,9 @@ impl Model {
     // the context. It may be a multiplier for the token's probability. The
     // constructor's configuration includes overrides for KV pairs.
     pub fn token_to_score(&self, token: llama_token) -> f32 {
-        unsafe { llama_token_get_score(self.inner, token) }
+        unsafe {
+            llama_token_get_score(llama_model_get_vocab(self.inner), token)
+        }
     }
 
     /// Get scores for a given slice of tokens.
@@ -821,7 +748,7 @@ impl Drop for Model {
 
 #[cfg(test)]
 mod tests {
-    use llama_cpp_sys_3::llama_vocab_type_LLAMA_VOCAB_TYPE_BPE;
+    use llama_cpp_sys_4::LLAMA_VOCAB_TYPE_BPE;
 
     use crate::Message;
 
@@ -845,9 +772,9 @@ mod tests {
         assert_eq!(model.infill_suffix(), -1);
         assert_eq!(model.infill_middle(), -1);
         assert_eq!(model.eot(), 32010);
-        assert_eq!(model.add_bos(), None);
-        assert_eq!(model.add_eos(), None);
-        assert_eq!(model.vocab_type(), llama_vocab_type_LLAMA_VOCAB_TYPE_BPE);
+        assert!(model.add_bos());
+        assert!(model.add_eos());
+        assert_eq!(model.vocab_type(), LLAMA_VOCAB_TYPE_BPE);
         assert_eq!(model.n_vocab(), 128256);
         assert_eq!(model.context_size(), 8192);
         assert_eq!(model.embedding_size(), 8192);

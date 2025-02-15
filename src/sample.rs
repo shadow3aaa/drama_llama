@@ -6,7 +6,7 @@ use crate::{
     Candidates, Probability,
 };
 
-use llama_cpp_sys_3::llama_token;
+use llama_cpp_sys_4::llama_token;
 use xorshift::Rng;
 
 use std::num::{NonZeroU8, NonZeroUsize};
@@ -1046,14 +1046,12 @@ pub fn apply_sample_repetition_ngram(
         .get()
         .max(1)
         .min(NGram::CAPACITY as u8)
-        .try_into()
-        .unwrap();
+        .into();
     let ngram_max_size: usize = ngram_max_size
         .get()
         .max(1)
         .min(NGram::CAPACITY as u8)
-        .try_into()
-        .unwrap();
+        .into();
     let penalty_max_count: usize = penalty_max_count.get().into();
 
     // Iterate over possible n-grams at the end of the tokens in order of
@@ -1064,14 +1062,14 @@ pub fn apply_sample_repetition_ngram(
         let ngram = NGram::try_from(slice).unwrap();
 
         // If either the ngram or the penalized token is ignored, skip the ngram
-        if ngram_is_ignored(ngram, &ignored) {
+        if ngram_is_ignored(ngram, ignored) {
             continue;
         }
 
         // Search from the end of the slice for a token that is not ignored.
         let mut penalized_token = None;
         for &token in slice.iter().rev() {
-            if ngram_is_ignored(token.into(), &ignored) {
+            if ngram_is_ignored(token.into(), ignored) {
                 continue;
             }
             penalized_token = Some(token);
@@ -1145,19 +1143,17 @@ pub(crate) fn sample_token(
         if !allowed {
             // The individual token is banned
             token.logit = min_logit;
-        } else {
-            if let Some(banned) = vocab.banned() {
-                // There are some banned ngrams
-                if let Some(&last_token) = tokens.last() {
-                    // and there is a previous token
-                    let ngram = [last_token, token.id];
-                    if banned.as_slice().binary_search(&ngram).is_ok() {
-                        // And the ngram is banned, ban the token
-                        // TODO: we could also remove the previous tokens from
-                        // the tokens but that doesn't suit our current design.
-                        // FIXME: it does now but there is still work to do.
-                        token.logit = min_logit;
-                    }
+        } else if let Some(banned) = vocab.banned() {
+            // There are some banned ngrams
+            if let Some(&last_token) = tokens.last() {
+                // and there is a previous token
+                let ngram = [last_token, token.id];
+                if banned.as_slice().binary_search(&ngram).is_ok() {
+                    // And the ngram is banned, ban the token
+                    // TODO: we could also remove the previous tokens from
+                    // the tokens but that doesn't suit our current design.
+                    // FIXME: it does now but there is still work to do.
+                    token.logit = min_logit;
                 }
             }
         }

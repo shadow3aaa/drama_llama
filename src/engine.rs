@@ -6,21 +6,21 @@ use crate::{
 
 use std::{num::NonZeroUsize, path::PathBuf, sync::Mutex};
 
-use llama_cpp_sys_3::{
-    ggml_log_callback, ggml_numa_strategy_GGML_NUMA_STRATEGY_DISABLED,
-    llama_backend_free, llama_backend_init, llama_context,
+use llama_cpp_sys_4::{
+    ggml_log_callback, llama_backend_free, llama_backend_init, llama_context,
     llama_context_default_params, llama_context_params, llama_copy_state_data,
     llama_decode, llama_free, llama_get_embeddings_ith,
     llama_get_kv_cache_token_count, llama_get_kv_cache_used_cells,
-    llama_get_logits_ith, llama_get_state_size, llama_get_timings,
-    llama_kv_cache_clear, llama_kv_cache_defrag, llama_kv_cache_seq_add,
-    llama_kv_cache_seq_cp, llama_kv_cache_seq_div, llama_kv_cache_seq_keep,
+    llama_get_logits_ith, llama_get_state_size, llama_kv_cache_clear,
+    llama_kv_cache_defrag, llama_kv_cache_seq_add, llama_kv_cache_seq_cp,
+    llama_kv_cache_seq_div, llama_kv_cache_seq_keep,
     llama_kv_cache_seq_pos_max, llama_kv_cache_seq_rm, llama_kv_cache_update,
     llama_log_set, llama_model_params, llama_n_batch, llama_n_ctx,
-    llama_new_context_with_model, llama_numa_init, llama_pos,
-    llama_reset_timings, llama_seq_id, llama_set_n_threads, llama_set_rng_seed,
-    llama_set_state_data, llama_supports_gpu_offload, llama_supports_mlock,
-    llama_supports_mmap, llama_timings, llama_token,
+    llama_new_context_with_model, llama_numa_init, llama_perf_context,
+    llama_perf_context_data, llama_perf_context_reset, llama_pos, llama_seq_id,
+    llama_set_n_threads, llama_set_state_data, llama_supports_gpu_offload,
+    llama_supports_mlock, llama_supports_mmap, llama_token,
+    GGML_NUMA_STRATEGY_DISABLED,
 };
 
 use thiserror::Error;
@@ -106,9 +106,14 @@ impl Engine {
             if *count == 1 {
                 unsafe {
                     llama_backend_init();
-                    llama_numa_init(numa_strategy.unwrap_or(
-                        ggml_numa_strategy_GGML_NUMA_STRATEGY_DISABLED.try_into().unwrap(),
-                    ).try_into().unwrap());
+                    llama_numa_init(
+                        numa_strategy
+                            .unwrap_or(
+                                GGML_NUMA_STRATEGY_DISABLED.try_into().unwrap(),
+                            )
+                            .try_into()
+                            .unwrap(),
+                    );
                 }
             }
         }
@@ -160,11 +165,6 @@ impl Engine {
     /// Returns true if GPU offload is supported.
     pub fn supports_gpu_offload() -> bool {
         unsafe { llama_supports_gpu_offload() }
-    }
-
-    /// Set the rng seed.
-    pub fn set_rng_seed(&self, seed: u32) {
-        unsafe { llama_set_rng_seed(self.context, seed) };
     }
 
     /// Get a raw pointer to the underlying llama.cpp context.
@@ -221,13 +221,13 @@ impl Engine {
     }
 
     /// Performance information
-    pub fn get_timings(&self) -> llama_timings {
-        unsafe { llama_get_timings(self.context) }
+    pub fn get_timings(&self) -> llama_perf_context_data {
+        unsafe { llama_perf_context(self.context) }
     }
 
     /// Reset performance information
     pub fn reset_timings(&self) {
-        unsafe { llama_reset_timings(self.context) };
+        unsafe { llama_perf_context_reset(self.context) };
     }
 
     /// Set callback for all future logging.
@@ -360,7 +360,7 @@ impl Engine {
     }
 
     /// Set the number of threads used for generation and batch processing.
-    pub fn set_n_threads(&mut self, n_gen: u32, n_batch: u32) {
+    pub fn set_n_threads(&mut self, n_gen: i32, n_batch: i32) {
         unsafe { llama_set_n_threads(self.context, n_gen, n_batch) }
     }
 
@@ -427,11 +427,11 @@ impl Engine {
     ///   can be converted back `into` the tokens, including any choices made.
     ///
     /// [`record_choice`]: crate::predictor::CandidatePredictor::record_choice
-    pub fn predict_candidates<'a>(
-        &'a mut self,
+    pub fn predict_candidates(
+        &mut self,
         tokens: Vec<llama_token>,
         n: NonZeroUsize,
-    ) -> CandidatePredictor<'a> {
+    ) -> CandidatePredictor<'_> {
         // TODO: We technically do not need to clear the cache here. If we keep
         // track of sequence ids, we can clear the cache when the sequence id
         // is no longer in use. This would be more efficient, but requires more
@@ -448,11 +448,11 @@ impl Engine {
     /// * The tokens given will be available as the `tokens` field of the
     ///   iterator. For convenience, when finished, the [`TokenPredictor`] can
     ///   be converted back `into` the tokens, including any predicted.
-    pub fn predict_tokens<'a>(
-        &'a mut self,
+    pub fn predict_tokens(
+        &mut self,
         tokens: Vec<llama_token>,
         options: PredictOptions,
-    ) -> TokenPredictor<'a> {
+    ) -> TokenPredictor<'_> {
         self.kv_cache_clear();
         TokenPredictor::new(self, tokens, options)
     }
@@ -472,11 +472,11 @@ impl Engine {
     ///   be converted back `into` the tokens, including any predicted. It can
     ///   also be converted into the predicted text. See the [`PiecePredictor`]
     ///   for additional conversion and collection methods.
-    pub fn predict_pieces<'a>(
-        &'a mut self,
+    pub fn predict_pieces(
+        &mut self,
         tokens: Vec<llama_token>,
         options: PredictOptions,
-    ) -> PiecePredictor<'a> {
+    ) -> PiecePredictor<'_> {
         self.kv_cache_clear();
         PiecePredictor::new(self, tokens, options)
     }
@@ -488,11 +488,11 @@ impl Engine {
     /// # Note
     /// * The tokens and generated text are available from the
     ///   [`Predictor::into_tokens_and_text`] method.
-    pub fn predict<'a>(
-        &'a mut self,
+    pub fn predict(
+        &mut self,
         tokens: Vec<llama_token>,
         options: PredictOptions,
-    ) -> Predictor<'a> {
+    ) -> Predictor<'_> {
         self.kv_cache_clear();
         Predictor::new(self, tokens, options)
     }

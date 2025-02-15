@@ -169,7 +169,7 @@ pub async fn tos() -> String {
 #[rocket::main]
 async fn main() {
     use drama_llama::SampleOptions;
-    use llama_cpp_sys_3::llama_token;
+    use llama_cpp_sys_4::llama_token;
     use rocket::{
         fs::{relative, FileServer},
         routes,

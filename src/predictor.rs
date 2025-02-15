@@ -1,6 +1,6 @@
 use std::num::{NonZeroU128, NonZeroUsize};
 
-use llama_cpp_sys_3::llama_token;
+use llama_cpp_sys_4::llama_token;
 use xorshift::{SeedableRng, Xoroshiro128};
 
 use crate::{
@@ -349,7 +349,7 @@ impl<'engine> CandidatePredictor<'engine> {
     }
 }
 
-impl<'engine> Iterator for CandidatePredictor<'engine> {
+impl Iterator for CandidatePredictor<'_> {
     type Item = Candidates;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -385,9 +385,9 @@ impl<'engine> Iterator for CandidatePredictor<'engine> {
     }
 }
 
-impl<'engine> Into<Vec<llama_token>> for CandidatePredictor<'engine> {
-    fn into(self) -> Vec<llama_token> {
-        self.tokens
+impl From<CandidatePredictor<'_>> for Vec<llama_token> {
+    fn from(val: CandidatePredictor<'_>) -> Self {
+        val.tokens
     }
 }
 
@@ -476,13 +476,13 @@ impl<'engine> TokenPredictor<'engine> {
     }
 }
 
-impl Into<Vec<llama_token>> for TokenPredictor<'_> {
-    fn into(self) -> Vec<llama_token> {
-        self.inner.into()
+impl From<TokenPredictor<'_>> for Vec<llama_token> {
+    fn from(val: TokenPredictor<'_>) -> Self {
+        val.inner.into()
     }
 }
 
-impl<'engine> Iterator for TokenPredictor<'engine> {
+impl Iterator for TokenPredictor<'_> {
     type Item = llama_token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -570,13 +570,13 @@ impl<'engine> PiecePredictor<'engine> {
 
     /// Predict and collect all the pieces, truncating at stop sequences.
     pub fn collect_text(mut self) -> String {
-        while let Some(_) = self.next() {}
+        for _ in self.by_ref() {}
         self.into_text()
     }
 
     /// Predict and collect the tokens and text, truncating at stop sequences.
     pub fn collect_tokens_and_text(mut self) -> (Vec<llama_token>, String) {
-        while let Some(_) = self.next() {}
+        for _ in self.by_ref() {}
         self.into_tokens_and_text()
     }
 
@@ -587,7 +587,7 @@ impl<'engine> PiecePredictor<'engine> {
     ) -> (Vec<String>, Vec<llama_token>, String) {
         let mut pieces = Vec::new();
         // We can't collect because it consumes the predictor.
-        while let Some(piece) = self.next() {
+        for piece in self.by_ref() {
             pieces.push(piece);
         }
         let (tokens, text) = self.into_tokens_and_text();
@@ -600,7 +600,7 @@ impl<'engine> PiecePredictor<'engine> {
     }
 }
 
-impl<'engine> Iterator for PiecePredictor<'engine> {
+impl Iterator for PiecePredictor<'_> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -644,14 +644,14 @@ impl<'engine> Iterator for PiecePredictor<'engine> {
     }
 }
 
-impl<'engine> Into<String> for PiecePredictor<'engine> {
-    fn into(self) -> String {
-        self.into_text()
+impl From<PiecePredictor<'_>> for String {
+    fn from(val: PiecePredictor<'_>) -> Self {
+        val.into_text()
     }
 }
-impl<'engine> Into<Vec<llama_token>> for PiecePredictor<'engine> {
-    fn into(self) -> Vec<llama_token> {
-        self.inner.inner.tokens
+impl From<PiecePredictor<'_>> for Vec<llama_token> {
+    fn from(val: PiecePredictor<'_>) -> Self {
+        val.inner.inner.tokens
     }
 }
 
@@ -703,7 +703,7 @@ impl Iterator for Predictor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use llama_cpp_sys_3::llama_token;
+    use llama_cpp_sys_4::llama_token;
 
     use crate::{Engine, PredictOptions, RepetitionOptions, SampleOptions};
     use std::{num::NonZeroUsize, path::PathBuf};

@@ -3,7 +3,7 @@
 // based blocking is the only way to go, so this module will have to be
 // rethought.
 
-use llama_cpp_sys_3::llama_token;
+use llama_cpp_sys_4::llama_token;
 
 use crate::NGram;
 

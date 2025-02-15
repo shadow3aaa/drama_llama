@@ -1,5 +1,5 @@
 use core::slice;
-use llama_cpp_sys_3::llama_token;
+use llama_cpp_sys_4::llama_token;
 use std::{collections::HashMap, ops::Index};
 use tinyvec::ArrayVec;
 
@@ -193,6 +193,12 @@ pub struct NGramStats {
     token_count: usize,
 }
 
+impl Default for NGramStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NGramStats {
     /// Create a new, empty NGramStats.
     pub fn new() -> Self {
@@ -230,12 +236,12 @@ impl NGramStats {
         self.ngram_count += 1;
         self.token_count += key.len();
 
-        let entry = self.data.entry(key).or_insert(NGramData::default());
+        let entry = self.data.entry(key).or_default();
         entry.count += 1;
         // Accumulated probability of the NGram
         let cum_prob: f64 = key
             .iter()
-            .map(|&token| candidates[token.abs() as usize].p as f64)
+            .map(|&token| candidates[token.unsigned_abs() as usize].p as f64)
             .sum();
 
         entry.cum_prob += cum_prob;
@@ -312,9 +318,9 @@ impl NGramStats {
     }
 }
 
-impl Into<HashMap<NGram, NGramData>> for NGramStats {
-    fn into(self) -> HashMap<NGram, NGramData> {
-        self.data
+impl From<NGramStats> for HashMap<NGram, NGramData> {
+    fn from(val: NGramStats) -> Self {
+        val.data
     }
 }
 

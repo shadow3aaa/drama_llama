@@ -1,6 +1,6 @@
 //! Vocabulary constraints.
 
-use llama_cpp_sys_3::llama_token;
+use llama_cpp_sys_4::llama_token;
 use regex::Regex;
 
 use crate::{data::banned::Banned, model::token_to_piece_ref, Model, NGram};
@@ -105,9 +105,9 @@ impl std::fmt::Display for VocabKind {
     }
 }
 
-impl Into<Regex> for VocabKind {
-    fn into(self) -> Regex {
-        match self {
+impl From<VocabKind> for Regex {
+    fn from(val: VocabKind) -> Self {
+        match val {
             VocabKind::Unsafe => Regex::new("*").unwrap(),
             VocabKind::Safe => Regex::new(SAFE_REGEX).unwrap(),
             VocabKind::Letters => Regex::new(LETTERS_REGEX).unwrap(),
@@ -233,7 +233,7 @@ impl Vocab {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use llama_cpp_sys_3::llama_token;
+    use llama_cpp_sys_4::llama_token;
     use rayon::prelude::*;
     use std::{
         collections::{BTreeSet, HashSet},
@@ -270,8 +270,8 @@ mod tests {
                 second_buf.clear();
                 joined_buf.clear();
 
-                token_to_piece_ref(first, &model, &mut first_buf);
-                token_to_piece_ref(second, &model, &mut second_buf);
+                token_to_piece_ref(first, model, &mut first_buf);
+                token_to_piece_ref(second, model, &mut second_buf);
 
                 joined_buf.push_str(
                     String::from_utf8_lossy(&first_buf).to_lowercase().as_ref(),
@@ -327,8 +327,7 @@ mod tests {
         model_path.push("models/model.gguf");
         let model = Model::from_file(model_path, None).unwrap();
         let mut out_path = root.clone();
-        out_path
-            .push(format!("tests/data/banned_ngrams/ngrams-english-llama.txt"));
+        out_path.push("tests/data/banned_ngrams/ngrams-english-llama.txt");
 
         let expected = generate_banned_ngrams(&model);
         let actual: BTreeSet<NGram> = crate::data::banned::ENGLISH_BIGRAMS
