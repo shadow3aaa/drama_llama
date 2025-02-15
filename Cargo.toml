@@ -41,6 +41,8 @@ cli = ["dep:clap"]
 serde = ["dep:rocket", "tinyvec/serde"]
 stats = ["dep:stringmetrics"]
 cuda = ["llama-cpp-sys-4/cuda"]
+metal = ["llama-cpp-sys-4/metal"]
+vulkan = ["llama-cpp-sys-4/vulkan"]
 egui = [
     "dep:egui",
     "dep:eframe",
